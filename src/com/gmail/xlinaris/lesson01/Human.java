@@ -1,46 +1,65 @@
 package com.gmail.xlinaris.lesson01;
 
-public class Human {
-    public static final String type="human";
+import java.lang.invoke.SwitchPoint;
+
+public class Human implements Competitor {
+    private static final String type = "Human";
     private String name;
-    private static final int maxRun=300;
-    private static final int maxJump=3;
+    private static int maxRun;// = 1000;
+    private static int maxJump;// = 3;
+    private static boolean next = true;
+
+    public boolean isNext() {
+        return this.next;
+    }
+
+    public void setNext(boolean next) {
+        Human.next = next;
+    }
 
     public Human(String name) {
         this.name = name;
     }
 
-    public static String getType() {
-        return type;
+    public Human(String sapiens, int maxRun, int maxJump) {
+        this.name = sapiens;
+        this.maxRun = maxRun;
+        this.maxJump = maxJump;
     }
 
-    public String getName() {
-        return name;
-    }
+    //Метод преодоления препятствий
+    String yesOrNot = "";
+    private int maxLimit;
 
-    public void setName(String name) {
-        this.name = name;
-    }
-
-    public static int getMaxRun() {
-        return maxRun;
-    }
-
-    public static int getMaxJump() {
-        return maxJump;
-    }
-    void info() {
-        System.out.println("-----------------");
-        System.out.printf("Участник соревнования: %s. Имя: %s.%n", type, name);
-    }
-    void run(int lengthRun) {
-        if (lengthRun<=maxRun) {
-            System.out.printf("%s может пробежать дистанцию: %d. Предельная дистанция для %s - %d.%n", type, lengthRun, type, maxRun);
+    @Override
+    public void isOvercome(int length, String type) {
+        switch (type) {
+            case ("run"):
+                run(length);
+                maxLimit = maxRun;
+                break;
+            case ("jump"):
+                jump(length);
+                maxLimit = maxJump;
+                break;
         }
+        System.out.println(this.type + ((length <= maxLimit) ? " преодолел преграду и может продолжать соревнование." : " не смог преодолеть эту преграду и выбывает из соревнования."));
+        if (length > maxLimit) this.setNext(false); //если не преодолел препятстсвие, то выбыл!
     }
-    void jump(int lengthJump) {
-        if (lengthJump<=maxJump) {
-            System.out.printf("%s может прыгнуть на высоту %d. Предельная высота для %s %d%n", type, lengthJump,type, maxJump);
-        }
+
+    //метод умения бегать
+    public void run(int length) {
+        System.out.println(type + " умеет бегать на дистанции до " + maxRun + " м.");
+    }
+
+    //метод умения прыгать
+    public void jump(int length) {
+        System.out.println(type + " умеет прыгать в высоту до " + maxJump + " cм.");
+    }
+
+    //вывод иноформации об участнике
+    @Override
+    public String toString() {
+        return "Участник соревнования: " + type + " по имени " + name + ".";
     }
 }
