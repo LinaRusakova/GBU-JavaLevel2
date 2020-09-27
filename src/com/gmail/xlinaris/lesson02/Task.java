@@ -3,7 +3,6 @@ package com.gmail.xlinaris.lesson02;
 import java.util.ArrayList;
 import java.util.List;
 
-
 public class Task {
     //создаем дефолтный размер строкового массива 4х4
     private static final int DEFAULT = 4;
@@ -22,8 +21,8 @@ public class Task {
         list.add(array3);
         list.add(array5);
         arrInit(list); //инициализируем каждый из созданных массивов
-        arrChanger(list);
-        arrChanger2(list);
+        arrChanger(list); //тестируем массивы по заданию 1 ДЗ
+        arrChanger2(list); //тестируем массивы по заданию 2 ДЗ
     }
 
     private static void arrInit(List list) {
@@ -76,7 +75,6 @@ public class Task {
      *  Если в каком-то элементе массива преобразование не удалось (например, в ячейке лежит символ или текст вместо числа),
      * должно быть брошено исключение MyArrayDataException, с детализацией в какой именно ячейке лежат неверные данные.
      * */
-
     private static void arrChanger2(List list) {
         //применяем в цикле foreach ко всем элементам списка метод, принимающий элементы списка (массивы)
         for (Object arrays : list) {
@@ -85,11 +83,9 @@ public class Task {
         }
     }
 
-    private static void task2ToInt(String[][] array)  {
+    private static void task2ToInt(String[][] array) {
         System.out.println("Пытаемся преобразовать элементы массива размером " + array.length + " в тип 'Int' и получить сумму элементов и вывести её в консоль...");
         int sum = 0;
-        String info = "";
-        int[][] arrInt = new int[array.length][array.length];
         for (int x = 0; x < array.length; x++) {
             for (int y = 0; y < array.length; y++) {
                 try {
@@ -100,17 +96,17 @@ public class Task {
 
             }
         }
-        System.out.println("Сумма всех элементов массива размером " + array.length + " = "+sum + "."); //если всё хорошо, выводим сумму элементов массива
+        System.out.println("Сумма всех элементов массива размером " + array.length + " = " + sum + "."); //если всё хорошо, выводим сумму элементов массива
     }
 
-    private static int getSum(String s, int sum, int x, int y) throws MyArrayDataException{
+    private static int getSum(String s, int sum, int x, int y) throws MyArrayDataException {
         try {
-            int value=Integer.parseInt(s);
-        sum += value;
+            int value = Integer.parseInt(s);
+            sum += value;
         } catch (NumberFormatException e) {
-            throw new MyArrayDataException(s,x,y);
+            throw new MyArrayDataException(s, x, y);
         } finally {
-            int value=0;
+            int value = 0;
             sum += value;
         }
         return sum;
