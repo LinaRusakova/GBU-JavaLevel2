@@ -1,29 +1,29 @@
 package com.gmail.xlinaris.network.client.models;
 
+import com.gmail.xlinaris.network.client.controllers.AuthDialogController;
+import com.gmail.xlinaris.network.clientserver.Command;
+import com.gmail.xlinaris.network.clientserver.CommandType;
+import com.gmail.xlinaris.network.clientserver.commands.*;
 import javafx.application.Platform;
 import com.gmail.xlinaris.network.client.controllers.ViewController;
 
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
+import java.io.*;
 import java.net.Socket;
+import java.util.Date;
+import java.util.Timer;
+import java.util.TimerTask;
+
+import static javafx.application.Platform.*;
 
 public class Network {
-
-    private static final String AUTH_CMD_PREFIX = "/auth";
-    private static final String AUTHOK_CMD_PREFIX = "/authok";
-    private static final String AUTHERR_CMD_PREFIX = "/autherr";
-    private static final String PRIVATE_MSG_CMD_PREFIX = "/w";
-    private static final String CLIENT_MSG_CMD_PREFIX = "/clientMsg";
-    private static final String SERVER_MSG_CMD_PREFIX = "/serverMsg";
 
     private static final String SERVER_ADDRESS = "localhost";
     private static final int SERVER_PORT = 8189;
 
     private final String host;
     private final int port;
-    private DataInputStream inputStream;
-    private DataOutputStream outputStream;
+    private ObjectInputStream inputStream;
+    private ObjectOutputStream outputStream;
     private Socket socket;
     private String username;
 
@@ -39,39 +39,91 @@ public class Network {
     public boolean connect() {
         try {
             socket = new Socket(host, port);
-            inputStream = new DataInputStream(socket.getInputStream());
-            outputStream = new DataOutputStream(socket.getOutputStream());
+            outputStream = new ObjectOutputStream(socket.getOutputStream());
+            inputStream = new ObjectInputStream(socket.getInputStream());
             return true;
         } catch (IOException e) {
             System.err.println("Соединение не было установлено!");
             e.printStackTrace();
             return false;
+
         }
+    }
+
+
+    volatile boolean flag = false; //flag for cancel timer
+    volatile boolean flagStop = false; //flag for close client window
+
+    public void timeOffStart(AuthDialogController authDialog, boolean startflag) throws IOException, InterruptedException {
+        flag = startflag;
+        Timer timer = new Timer();
+        TimerTask task = new TimerTask() {
+            int t = 120; //Time for chat authorization (sec).
+
+            @Override
+            public void run() {
+
+                if (t >= 0) {
+                    Platform.runLater(authDialog::timeShow);
+                    t--;
+                } else if (!flag) {
+                    timer.cancel();
+                    try {
+                        socket.close();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                } else {
+                    timer.cancel();
+                    flagStop=true;
+                }
+            }
+        };
+        timer.schedule(task, new Date(), 1000);
+
     }
 
     public String sendAuthCommand(String login, String password) {
         try {
-            outputStream.writeUTF(String.format("%s %s %s", AUTH_CMD_PREFIX, login, password));
-            String response = inputStream.readUTF();
-            if (response.startsWith(AUTHOK_CMD_PREFIX)) {
-                this.username = response.split("\\s+", 2)[1];
-                return null;
-            } else {
-                return response.split("\\s+", 2)[1];
+            Command authCommand = Command.authCommand(login, password);
+            outputStream.writeObject(authCommand);
+            Command command = readCommand();
+            if (command == null) {
+                return "Failed to read command from server";
             }
-        } catch (IOException e) {
+            switch (command.getType()) {
+                case AUTH_OK: {
+                    AuthOkCommandData data = (AuthOkCommandData) command.getData();
+                    this.username = data.getUsername();
+
+                    return null;
+                }
+                case AUTH_ERROR: {
+                    AuthErrorCommandData data = (AuthErrorCommandData) command.getData();
+                    return data.getErrorMessage();
+                }
+                default:
+                    return "Unknown type of command from server:" + command.getType();
+            }
+        } catch (
+                IOException e) {
             e.printStackTrace();
             return e.getMessage();
         }
     }
 
     public void sendMessage(String message) throws IOException {
-        outputStream.writeUTF(message);
+        Command command = Command.publicMessageCommand(username, message);
+        sendCommand(command);
+    }
+
+    private void sendCommand(Command command) throws IOException {
+        outputStream.writeObject(command);
     }
 
     public void sendPrivateMessage(String message, String recipient) throws IOException {
-        String command = String.format("%s %s %s",PRIVATE_MSG_CMD_PREFIX, recipient, message);
-        sendMessage(command);
+        Command command = Command.privateMessageCommand(recipient, message);
+        sendCommand(command);
     }
 
     public void waitMessages(ViewController viewController) {
@@ -80,25 +132,49 @@ public class Network {
             public void run() {
                 try {
                     while (true) {
-                        String message = inputStream.readUTF();
-                        if (message.startsWith(CLIENT_MSG_CMD_PREFIX)) {
-                            String[] parts = message.split("\\s+", 3);
-                            String sender = parts[1];
-                            String msgBody = parts[2];
-                            Platform.runLater(() -> {
-                                viewController.appendMessage(String.format("%s: %s", sender, msgBody));
-                            });
+
+                        Command command = readCommand();
+                        if (command == null) {
+                            viewController.showError("Server error", "Invalid command from server!");
+                            continue;
                         }
-                        else if (message.startsWith(SERVER_MSG_CMD_PREFIX)) {
-                            String[] parts = message.split("\\s+", 2);
-                            Platform.runLater(() -> {
-                                viewController.appendMessage(parts[1]);
-                            });
-                        }
-                        else {
-                            Platform.runLater(() -> {
-                                viewController.showError("Unknown command from server!", message);
-                            });
+                        switch (command.getType()) {
+                            case INFO_MESSAGE: {
+                                MessageInfoCommandData data = (MessageInfoCommandData) command.getData();
+                                String message = data.getMessage();
+                                String sender = data.getSender();
+                                String formattedMsg = sender != null ? String.format("%s: %s", sender, message) : message;
+                                runLater(() -> {
+                                    viewController.appendMessage(formattedMsg);
+                                });
+                                break;
+                            }
+                            case ERROR: {
+                                ErrorCommandData data = (ErrorCommandData) command.getData();
+                                String errorMessage = data.getErrorMessage();
+                                runLater(() -> {
+                                    viewController.showError("Server error", errorMessage);
+                                });
+                                break;
+                            }
+                            case UPDATE_USERS_LIST: {
+                                UpdateUsersListCommandData data = (UpdateUsersListCommandData) command.getData();
+                                runLater(() -> {
+                                    viewController.updateUsers(data.getUsers());
+                                });
+                                break;
+                            }
+                            case TIMEOUT: {
+                                timeOutCommandData data = (timeOutCommandData) command.getData();
+                                flag = true;
+                                if (flagStop) {Platform.exit();
+                                socket.close();}
+                                break;
+                            }
+                            default:
+                                runLater(() -> {
+                                    viewController.showError("Server error", command.getType().toString());
+                                });
                         }
                     }
                 } catch (IOException e) {
@@ -120,5 +196,17 @@ public class Network {
 
     public String getUsername() {
         return username;
+    }
+
+    private Command readCommand() throws IOException {
+        try {
+            return (Command) inputStream.readObject();
+
+        } catch (ClassNotFoundException e) {
+            String errorMessage = "Unknown type of object from client.";
+            System.err.println(errorMessage);
+            e.printStackTrace();
+            return null;
+        }
     }
 }

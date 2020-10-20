@@ -1,6 +1,8 @@
 package com.gmail.xlinaris.network.client;
 
 import javafx.application.Application;
+import javafx.application.Platform;
+import javafx.event.EventHandler;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
@@ -10,6 +12,7 @@ import javafx.stage.Stage;
 import com.gmail.xlinaris.network.client.controllers.AuthDialogController;
 import com.gmail.xlinaris.network.client.controllers.ViewController;
 import com.gmail.xlinaris.network.client.models.Network;
+import javafx.stage.WindowEvent;
 
 import java.util.List;
 
@@ -34,7 +37,10 @@ public class NetworkChatClient extends Application {
         }
 
         openAuthDialog(primaryStage);
+        AuthDialogController authController;
+
         createChatDialog(primaryStage);
+
     }
 
     private void createChatDialog(Stage primaryStage) throws java.io.IOException {
@@ -52,24 +58,36 @@ public class NetworkChatClient extends Application {
         primaryStage.setOnCloseRequest(event -> network.close());
     }
 
-    private void openAuthDialog(Stage primaryStage) throws java.io.IOException {
+    private void openAuthDialog(Stage primaryStage) throws java.io.IOException, InterruptedException {
         FXMLLoader authLoader = new FXMLLoader();
 
         authLoader.setLocation(NetworkChatClient.class.getResource("views/authDialog.fxml"));
         Parent authDialogPanel = authLoader.load();
         authDialogStage = new Stage();
 
-        authDialogStage.setTitle("Аутентификая чата");
+        authDialogStage.setTitle("Chat authorization");
         authDialogStage.initModality(Modality.WINDOW_MODAL);
         authDialogStage.initOwner(primaryStage);
         Scene scene = new Scene(authDialogPanel);
         authDialogStage.setScene(scene);
+        authDialogStage.setOnCloseRequest(new EventHandler<WindowEvent>() {
+            @Override
+            public void handle(WindowEvent event) {
+                Platform.exit();
+                System.exit(0);
+
+            }
+        });
+
         authDialogStage.show();
 
 
         AuthDialogController authController = authLoader.getController();
         authController.setNetwork(network);
+        network.timeOffStart(authController, false);
         authController.setClientApp(this);
+
+
     }
 
     public static void showNetworkError(String errorDetails, String errorTitle) {

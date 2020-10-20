@@ -1,5 +1,6 @@
 package com.gmail.xlinaris.network.server.chat;
 
+import com.gmail.xlinaris.network.clientserver.Command;
 import com.gmail.xlinaris.network.server.chat.auth.AuthService;
 import com.gmail.xlinaris.network.server.chat.auth.BaseAuthService;
 import com.gmail.xlinaris.network.server.chat.handler.ClientHandler;
@@ -7,10 +8,10 @@ import com.gmail.xlinaris.network.server.chat.handler.ClientHandler;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
+
+import static com.gmail.xlinaris.network.clientserver.Command.timeOutCommand;
 
 public class MyServer {
 
@@ -51,29 +52,46 @@ public class MyServer {
     private void processClientConnection(Socket clientSocket) throws IOException {
         ClientHandler clientHandler = new ClientHandler(this, clientSocket);
         clientHandler.handle();
+
     }
 
     public AuthService getAuthService() {
         return authService;
     }
 
-    public synchronized void broadcastMessage(String message, ClientHandler sender, boolean isServerInfoMsg) throws IOException {
+    public synchronized void broadcastMessage(ClientHandler sender, Command command) throws IOException {
         for (ClientHandler client : clients) {
             if (client == sender) {
                 continue;
             }
 
-            client.sendMessage(isServerInfoMsg ? null : sender.getUsername(), message);
+            client.sendMessage(command);
         }
     }
 
-    public synchronized void subscribe(ClientHandler handler) {
+    public synchronized void subscribe(ClientHandler handler) throws IOException {
         clients.add(handler);
+        List<String> usernames = getAllUsernames();
+        broadcastMessage(null, Command.updateUsersListCommand(usernames));
+        handler.sendMessage(timeOutCommand(true));
     }
 
-    public synchronized void unsubscribe(ClientHandler handler) {
+    public synchronized void unsubscribe(ClientHandler handler) throws IOException {
         clients.remove(handler);
+        List<String> usernames = getAllUsernames();
+        broadcastMessage(null, Command.updateUsersListCommand(usernames));
+
+
     }
+    private List<String> getAllUsernames() {
+        List<String> usernames= new ArrayList<>();
+        for (ClientHandler client: clients) {
+            usernames.add(client.getUsername());
+        }
+        return usernames;
+    }
+
+
 
     public synchronized boolean isNicknameAlreadyBusy(String username) {
         for (ClientHandler client : clients) {
@@ -84,11 +102,15 @@ public class MyServer {
         return false;
     }
 
-    public synchronized void sendPrivateMessage(ClientHandler sender, String recipient, String privateMessage) throws IOException {
+    public synchronized void sendPrivateMessage(String recipient, Command command) throws IOException {
         for (ClientHandler client : clients) {
             if (client.getUsername().equals(recipient)) {
-                client.sendMessage(sender.getUsername(), privateMessage);
+                client.sendMessage(command);
             }
         }
     }
+
+//    public void checkTimeOut(String user) throws IOException {
+//       sendPrivateMessage(user, timeOutCommand(true));
+//    }
 }

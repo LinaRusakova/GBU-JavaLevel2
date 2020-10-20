@@ -1,15 +1,19 @@
 package com.gmail.xlinaris.network.client.controllers;
 
+import javafx.application.Platform;
 import javafx.collections.FXCollections;
+import javafx.event.EventHandler;
 import javafx.fxml.FXML;
 import javafx.scene.control.*;
 import javafx.scene.input.MouseEvent;
 import com.gmail.xlinaris.network.client.NetworkChatClient;
 import com.gmail.xlinaris.network.client.models.Network;
+import javafx.stage.WindowEvent;
 
 import java.io.IOException;
 import java.text.DateFormat;
 import java.util.Date;
+import java.util.List;
 
 
 public class ViewController {
@@ -32,6 +36,7 @@ public class ViewController {
 
     @FXML
     public void initialize() {
+
         usersList.setItems(FXCollections.observableArrayList(NetworkChatClient.USERS_TEST_DATA));
         sendButton.setOnAction(event -> sendMessage());
         textField.setOnAction(event -> sendMessage());
@@ -109,5 +114,9 @@ public class ViewController {
 
     public void showError(String title, String message) {
         NetworkChatClient.showNetworkError(message, title);
+    }
+
+    public void updateUsers(List<String> users) {
+        usersList.setItems(FXCollections.observableArrayList(users));
     }
 }

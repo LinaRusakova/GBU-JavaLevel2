@@ -1,27 +1,28 @@
 package com.gmail.xlinaris.network.server.chat.handler;
 
+import com.gmail.xlinaris.network.clientserver.Command;
+import com.gmail.xlinaris.network.clientserver.CommandType;
+import com.gmail.xlinaris.network.clientserver.commands.AuthCommandData;
+import com.gmail.xlinaris.network.clientserver.commands.PrivateMessageCommandData;
+import com.gmail.xlinaris.network.clientserver.commands.PublicMessageCommandData;
 import com.gmail.xlinaris.network.server.chat.MyServer;
 
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
+import java.io.*;
 import java.net.Socket;
+import java.util.Date;
+import java.util.Timer;
+import java.util.TimerTask;
+
+import static com.gmail.xlinaris.network.clientserver.Command.*;
+
 
 public class ClientHandler {
-
-    private static final String AUTH_CMD_PREFIX = "/auth";
-    private static final String AUTHOK_CMD_PREFIX = "/authok";
-    private static final String AUTHERR_CMD_PREFIX = "/autherr";
-    private static final String PRIVATE_MSG_CMD_PREFIX = "/w";
-    private static final String CLIENT_MSG_CMD_PREFIX = "/clientMsg";
-    private static final String SERVER_MSG_CMD_PREFIX = "/serverMsg";
-    private static final String END_CMD = "/end";
 
     private final MyServer myServer;
     private final Socket clientSocket;
 
-    private DataInputStream in;
-    private DataOutputStream out;
+    private ObjectInputStream in;
+    private ObjectOutputStream out;
 
     private String username;
 
@@ -30,14 +31,17 @@ public class ClientHandler {
         this.clientSocket = clientSocket;
     }
 
-    public void handle() throws IOException {
-        in  = new DataInputStream(clientSocket.getInputStream());
-        out = new DataOutputStream(clientSocket.getOutputStream());
 
+    public void handle() throws IOException {
+        in = new ObjectInputStream(clientSocket.getInputStream());
+        out = new ObjectOutputStream(clientSocket.getOutputStream());
         new Thread(() -> {
+
             try {
                 authentication();
+//                checkTimeout();
                 readMessages();
+
             } catch (IOException e) {
                 e.printStackTrace();
             } finally {
@@ -48,54 +52,99 @@ public class ClientHandler {
                 }
             }
         }).start();
+
     }
 
-    public String getUsername() {
-        return username;
+    private void checkTimeout() throws IOException {
+       out.writeObject(Command.timeOutCommand(true));
+//        myServer.checkTimeOut(true);
     }
+
 
     private void readMessages() throws IOException {
         while (true) {
-            String message = in.readUTF();
-            System.out.println("message from " + username + ": " + message);
-            if (message.startsWith(END_CMD)) {
-                return;
+
+            Command command = readCommand();
+            if (command == null) {
+                continue;
             }
-            else if (message.startsWith(PRIVATE_MSG_CMD_PREFIX)) {
-                String[] parts = message.split("\\s+", 3);
-                String recipient = parts[1];
-                String privateMessage = parts[2];
-                myServer.sendPrivateMessage(this, recipient, privateMessage);
-            }
-            else {
-                myServer.broadcastMessage(message, this, false);
+            switch (command.getType()) {
+                case END: {
+                    break;
+                }
+                case PRIVATE_MESSAGE: {
+                    PrivateMessageCommandData data = (PrivateMessageCommandData) command.getData();
+                    String recipient = data.getReceiver();
+                    String privateMessage = data.getMessage();
+                    myServer.sendPrivateMessage(recipient, messageInfoCommand(privateMessage, username));
+                    break;
+                }
+                case PUBLIC_MESSAGE: {
+                    PublicMessageCommandData data = (PublicMessageCommandData) command.getData();
+                    String sender = data.getSender();
+                    String message = data.getMessage();
+                    myServer.broadcastMessage(this, messageInfoCommand(message, sender));
+                    break;
+                }
+                default:
+                    System.err.println("Unknown type of command:" + command.getType());
             }
         }
     }
 
+    private Command readCommand() throws IOException {
+        try {
+            return (Command) in.readObject();
+
+        } catch (ClassNotFoundException e) {
+            String errorMessage = "Unknown type of object from client.";
+            System.err.println(errorMessage);
+            e.printStackTrace();
+            sendMessage(errorCommand(errorMessage));
+            return null;
+        }
+    }
+
     private void authentication() throws IOException {
+
         while (true) {
-            String message = in.readUTF();
-            if (message.startsWith(AUTH_CMD_PREFIX)) {
-                String[] parts = message.split("\\s+", 3);// один пробел и более
-                String login = parts[1];
-                String password = parts[2];
-                this.username = myServer.getAuthService().getUsernameByLoginAndPassword(login, password);
-                if (username != null) {
-                    if (myServer.isNicknameAlreadyBusy(username)) {
-                        out.writeUTF(AUTHERR_CMD_PREFIX + " Login and password are already used!");
-                        continue;
-                    }
-                    out.writeUTF(AUTHOK_CMD_PREFIX + " " + username);
-                    myServer.broadcastMessage(username + " joined to chat!", this, true);
-                    myServer.subscribe(this);
+            Command command = readCommand();
+            if (command == null) {
+                continue;
+            }
+            if (command.getType() == CommandType.AUTH) {
+                boolean isSuccessAuth = processAuthCommand(command);
+                if (isSuccessAuth) {
                     break;
-                } else {
-                    out.writeUTF(AUTHERR_CMD_PREFIX + " Login and/or password are invalid! Please, try again");
                 }
             } else {
-                out.writeUTF(AUTHERR_CMD_PREFIX + " /auth command is required!");
+                sendMessage(authErrorCommand("Auth command is required."));
             }
+        }
+    }
+
+
+    private boolean processAuthCommand(Command command) throws IOException {
+        AuthCommandData cmdData = (AuthCommandData) command.getData();
+        String login = cmdData.getLogin();
+        String password = cmdData.getPassword();
+        this.username = myServer.getAuthService().getUsernameByLoginAndPassword(login, password);
+        if (username != null) {
+            if (myServer.isNicknameAlreadyBusy(username)) {
+                sendMessage(authErrorCommand("Login and password are already used!"));
+                return false;
+            }
+            sendMessage(authOkCommand(username));
+
+            String message = username + " joined to chat!";
+            myServer.broadcastMessage(this, messageInfoCommand(message, null));
+            myServer.subscribe(this);
+//            myServer.checkTimeOut(username);
+
+            return true;
+        } else {
+            sendMessage(authErrorCommand(" Login and/or password are invalid! Please, try again"));
+            return false;
         }
     }
 
@@ -105,12 +154,15 @@ public class ClientHandler {
     }
 
 
-    public void sendMessage(String sender, String message) throws IOException {
-        if (sender == null) {
-            out.writeUTF(String.format("%s %s", SERVER_MSG_CMD_PREFIX, message));
-        }
-        else {
-            out.writeUTF(String.format("%s %s %s", CLIENT_MSG_CMD_PREFIX, sender, message));
-        }
+    public void sendMessage(Command command) throws IOException {
+        out.writeObject(command);
+    }
+
+    public String getUsername() {
+        return username;
+    }
+
+    public void setUsername(String username) {
+        this.username = username;
     }
 }
